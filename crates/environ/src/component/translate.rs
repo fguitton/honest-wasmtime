@@ -1239,6 +1239,20 @@ impl<'a, 'data> Translator<'a, 'data> {
                         })?,
                 )?;
 
+                if cfg!(feature = "component-model-memory64-only")
+                    && translation
+                        .module
+                        .memories
+                        .values()
+                        .any(|m| m.idx_type != crate::IndexType::I64 || m.shared)
+                {
+                    return Err(crate::WasmError::Unsupported(
+                        "closed component profile requires unshared memory64 in every core module"
+                            .into(),
+                    )
+                    .into());
+                }
+
                 translation.wasm_module_offset = u64::try_from(unchecked_range.start).unwrap();
                 let static_module_index2 = self.static_modules.push(translation);
                 assert_eq!(static_module_index, static_module_index2);
@@ -1598,6 +1612,14 @@ impl<'a, 'data> Translator<'a, 'data> {
                     string_encoding = StringEncoding::CompactUtf16;
                 }
                 wasmparser::CanonicalOption::Memory(idx) => {
+                    if cfg!(feature = "component-model-memory64-only")
+                        && !self.validator.types(0).unwrap().memory_at(*idx).memory64
+                    {
+                        return Err(crate::WasmError::Unsupported(
+                            "memory64-only component profile rejects a memory32 canonical ABI"
+                                .into(),
+                        ));
+                    }
                     let idx = MemoryIndex::from_u32(*idx);
                     memory = Some(idx);
                 }
@@ -1631,6 +1653,11 @@ impl<'a, 'data> Translator<'a, 'data> {
             }
         }
 
+        if cfg!(feature = "component-model-memory64-only") && (async_ || gc) {
+            return Err(crate::WasmError::Unsupported(
+                "memory64-only component profile admits synchronous linear-memory ABI only".into(),
+            ));
+        }
         Ok(LocalCanonicalOptions {
             string_encoding,
             post_return,

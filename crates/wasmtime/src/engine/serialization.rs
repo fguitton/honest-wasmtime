@@ -36,7 +36,13 @@ use object::{
 use serde_derive::{Deserialize, Serialize};
 use wasmtime_environ::{FlagValue, ObjectKind, OperatorCostStrategy, Tunables, obj};
 
-const VERSION: u8 = 0;
+// Closed EHDS memory64 ABI artifacts must never deserialize into a memory32 host,
+// even when the embedding disables package-version checks.
+const VERSION: u8 = if cfg!(feature = "component-model-memory64-only") {
+    64
+} else {
+    0
+};
 
 /// Verifies that the serialized engine in `mmap` is compatible with the
 /// `engine` provided.

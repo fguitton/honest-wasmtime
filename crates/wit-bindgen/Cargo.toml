@@ -20,5 +20,6 @@ indexmap = { workspace = true, features = ['std'] }
 bitflags = { workspace = true }
 
 [features]
+component-model-memory64-only = []
 async = []
 component-model-async = []

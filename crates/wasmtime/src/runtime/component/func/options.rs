@@ -156,25 +156,33 @@ impl<'a, T: 'static> LowerContext<'a, T> {
         };
         let realloc = instance.runtime_realloc(realloc);
 
-        let params = (
-            u32::try_from(old)?,
-            u32::try_from(old_size)?,
-            old_align,
-            u32::try_from(new_size)?,
-        );
-
-        type ReallocFunc = crate::TypedFunc<(u32, u32, u32, u32), u32>;
-
-        // Invoke the wasm malloc function using its raw and statically known
-        // signature.
-        let result = unsafe {
-            ReallocFunc::call_raw(&mut StoreContextMut(store), &realloc_ty, realloc, params)?
+        let result = if cfg!(feature = "component-model-memory64-only") {
+            type ReallocFunc = crate::TypedFunc<(u64, u64, u64, u64), u64>;
+            let params = (
+                old as u64,
+                old_size as u64,
+                u64::from(old_align),
+                new_size as u64,
+            );
+            // Signature authenticated by the component validator and the closed profile.
+            usize::try_from(unsafe {
+                ReallocFunc::call_raw(&mut StoreContextMut(store), &realloc_ty, realloc, params)?
+            })?
+        } else {
+            type ReallocFunc = crate::TypedFunc<(u32, u32, u32, u32), u32>;
+            let params = (
+                u32::try_from(old)?,
+                u32::try_from(old_size)?,
+                old_align,
+                u32::try_from(new_size)?,
+            );
+            usize::try_from(unsafe {
+                ReallocFunc::call_raw(&mut StoreContextMut(store), &realloc_ty, realloc, params)?
+            })?
         };
-
-        if result % old_align != 0 {
+        if result % (old_align as usize) != 0 {
             bail!("realloc return: result not aligned");
         }
-        let result = usize::try_from(result)?;
 
         if self
             .as_slice_mut()

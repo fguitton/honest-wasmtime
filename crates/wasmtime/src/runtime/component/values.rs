@@ -244,11 +244,11 @@ impl Val {
                 Val::Resource(ResourceAny::linear_lift_from_memory(cx, ty, bytes)?)
             }
             InterfaceType::List(i) => {
-                let (ptr, len) = load_flat_pointer_pair(bytes);
+                let (ptr, len) = load_flat_pointer_pair(bytes)?;
                 load_list(cx, i, ptr, len)?
             }
             InterfaceType::Map(i) => {
-                let (ptr, len) = load_flat_pointer_pair(bytes);
+                let (ptr, len) = load_flat_pointer_pair(bytes)?;
                 load_map(cx, i, ptr, len)?
             }
 
@@ -261,7 +261,7 @@ impl Val {
                             let abi = cx.types.canonical_abi(&field.ty);
                             let offset = abi.next_field32(&mut offset);
                             let offset = usize::try_from(offset).unwrap();
-                            let size = usize::try_from(abi.size32).unwrap();
+                            let size = usize::try_from(abi.host_size()).unwrap();
                             Ok((
                                 field.name.to_string(),
                                 Val::load(cx, field.ty, &bytes[offset..][..size])?,
@@ -279,7 +279,7 @@ impl Val {
                             let abi = cx.types.canonical_abi(&ty);
                             let offset = abi.next_field32(&mut offset);
                             let offset = usize::try_from(offset).unwrap();
-                            let size = usize::try_from(abi.size32).unwrap();
+                            let size = usize::try_from(abi.host_size()).unwrap();
                             Val::load(cx, ty, &bytes[offset..][..size])
                         })
                         .collect::<Result<_>>()?,
@@ -519,7 +519,7 @@ impl Val {
         ty: InterfaceType,
         offset: usize,
     ) -> Result<()> {
-        debug_assert!(offset % usize::try_from(cx.types.canonical_abi(&ty).align32)? == 0);
+        debug_assert!(offset % usize::try_from(cx.types.canonical_abi(&ty).host_align())? == 0);
 
         match (ty, self) {
             (InterfaceType::Bool, Val::Bool(value)) => value.linear_lower_to_memory(cx, ty, offset),
@@ -564,8 +564,13 @@ impl Val {
                 let ty = &cx.types[ty];
                 let (ptr, len) = lower_list(cx, ty.element, values)?;
                 // FIXME(#4311): needs memory64 handling
-                *cx.get(offset + 0) = u32::try_from(ptr).unwrap().to_le_bytes();
-                *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+                if cfg!(feature = "component-model-memory64-only") {
+                    *cx.get(offset) = (ptr as u64).to_le_bytes();
+                    *cx.get(offset + 8) = (len as u64).to_le_bytes();
+                } else {
+                    *cx.get(offset) = u32::try_from(ptr).unwrap().to_le_bytes();
+                    *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+                }
                 Ok(())
             }
             (InterfaceType::List(_), _) => unexpected(ty, self),
@@ -573,8 +578,13 @@ impl Val {
                 let map_ty = &cx.types[ty_idx];
                 let (ptr, len) = lower_map(cx, map_ty, values)?;
                 // FIXME(#4311): needs memory64 handling
-                *cx.get(offset + 0) = u32::try_from(ptr).unwrap().to_le_bytes();
-                *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+                if cfg!(feature = "component-model-memory64-only") {
+                    *cx.get(offset) = (ptr as u64).to_le_bytes();
+                    *cx.get(offset + 8) = (len as u64).to_le_bytes();
+                } else {
+                    *cx.get(offset) = u32::try_from(ptr).unwrap().to_le_bytes();
+                    *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+                }
                 Ok(())
             }
             (InterfaceType::Map(_), _) => unexpected(ty, self),
@@ -593,7 +603,7 @@ impl Val {
                         field.ty,
                         cx.types
                             .canonical_abi(&field.ty)
-                            .next_field32_size(&mut offset),
+                            .host_next_field_size(&mut offset),
                     )?;
                 }
                 Ok(())
@@ -609,7 +619,7 @@ impl Val {
                     value.store(
                         cx,
                         *ty,
-                        cx.types.canonical_abi(ty).next_field32_size(&mut offset),
+                        cx.types.canonical_abi(ty).host_next_field_size(&mut offset),
                     )?;
                 }
                 Ok(())
@@ -928,7 +938,7 @@ impl GenericVariant<'_> {
         }
 
         if let Some((value, ty)) = self.payload {
-            let offset = offset + usize::try_from(self.info.payload_offset32).unwrap();
+            let offset = offset + usize::try_from(self.info.host_payload_offset()).unwrap();
             value.store(cx, ty, offset)?;
         }
 
@@ -940,23 +950,26 @@ fn lift_flat_pointer_pair(
     cx: &mut LiftContext<'_>,
     src: &mut Iter<'_, ValRaw>,
 ) -> Result<(usize, usize)> {
-    // FIXME(#4311): needs memory64 treatment
+    if cfg!(feature = "component-model-memory64-only") {
+        return Ok((
+            usize::try_from(next(src).get_u64())?,
+            usize::try_from(next(src).get_u64())?,
+        ));
+    }
     let ptr = u32::linear_lift_from_flat(cx, InterfaceType::U32, next(src))? as usize;
     let len = u32::linear_lift_from_flat(cx, InterfaceType::U32, next(src))? as usize;
     Ok((ptr, len))
 }
 
-fn load_flat_pointer_pair(bytes: &[u8]) -> (usize, usize) {
-    let ptr = u32::from_le_bytes(*bytes[..4].as_array().unwrap()) as usize;
-    let len = u32::from_le_bytes(*bytes[4..].as_array().unwrap()) as usize;
-    (ptr, len)
+fn load_flat_pointer_pair(bytes: &[u8]) -> Result<(usize, usize)> {
+    super::func::load_host_pointer_pair(bytes)
 }
 
 fn load_list(cx: &mut LiftContext<'_>, ty: TypeListIndex, ptr: usize, len: usize) -> Result<Val> {
     let elem = cx.types[ty].element;
     let abi = cx.types.canonical_abi(&elem);
-    let element_size = usize::try_from(abi.size32).unwrap();
-    let element_alignment = abi.align32;
+    let element_size = usize::try_from(abi.host_size()).unwrap();
+    let element_alignment = abi.host_align();
 
     match len
         .checked_mul(element_size)
@@ -990,11 +1003,11 @@ fn load_map(cx: &mut LiftContext<'_>, ty: TypeMapIndex, ptr: usize, len: usize) 
 
     let key_abi = cx.types.canonical_abi(&key_ty);
     let value_abi = cx.types.canonical_abi(&value_ty);
-    let key_size = usize::try_from(key_abi.size32).unwrap();
-    let value_size = usize::try_from(value_abi.size32).unwrap();
-    let value_offset = usize::try_from(map_ty.value_offset32).unwrap();
-    let tuple_alignment = map_ty.entry_abi.align32;
-    let tuple_size = usize::try_from(map_ty.entry_abi.size32).unwrap();
+    let key_size = usize::try_from(key_abi.host_size()).unwrap();
+    let value_size = usize::try_from(value_abi.host_size()).unwrap();
+    let value_offset = usize::try_from(map_ty.host_value_offset()).unwrap();
+    let tuple_alignment = map_ty.entry_abi.host_align();
+    let tuple_size = usize::try_from(map_ty.entry_abi.host_size()).unwrap();
 
     // Bounds check
     match len
@@ -1051,9 +1064,9 @@ fn load_variant(
         .ok_or_else(|| format_err!("discriminant {discriminant} out of range [0..{len})"))?;
     let value = match case_ty {
         Some(case_ty) => {
-            let payload_offset = usize::try_from(info.payload_offset32).unwrap();
+            let payload_offset = usize::try_from(info.host_payload_offset()).unwrap();
             let case_abi = cx.types.canonical_abi(&case_ty);
-            let case_size = usize::try_from(case_abi.size32).unwrap();
+            let case_size = usize::try_from(case_abi.host_size()).unwrap();
             Some(Box::new(Val::load(
                 cx,
                 case_ty,
@@ -1096,8 +1109,8 @@ fn lower_list<T>(
     items: &[Val],
 ) -> Result<(usize, usize)> {
     let abi = cx.types.canonical_abi(&element_type);
-    let elt_size = usize::try_from(abi.size32)?;
-    let elt_align = abi.align32;
+    let elt_size = usize::try_from(abi.host_size())?;
+    let elt_align = abi.host_align();
     let size = items
         .len()
         .checked_mul(elt_size)
@@ -1119,9 +1132,9 @@ fn lower_map<T>(
 ) -> Result<(usize, usize)> {
     let key_type = map_ty.key;
     let value_type = map_ty.value;
-    let value_offset = usize::try_from(map_ty.value_offset32).unwrap();
-    let tuple_align = map_ty.entry_abi.align32;
-    let tuple_size = usize::try_from(map_ty.entry_abi.size32).unwrap();
+    let value_offset = usize::try_from(map_ty.host_value_offset()).unwrap();
+    let tuple_align = map_ty.entry_abi.host_align();
+    let tuple_size = usize::try_from(map_ty.entry_abi.host_size()).unwrap();
 
     let size = pairs
         .len()

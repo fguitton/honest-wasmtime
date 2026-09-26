@@ -63,6 +63,7 @@ name = "btrees"
 required-features = ["std"]
 
 [features]
+component-model-memory64-only = ["component-model"]
 anyhow = ["wasmtime-core/anyhow"]
 backtrace = ["std", "wasmtime-core/backtrace"]
 component-model = [

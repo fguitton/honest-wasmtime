@@ -129,6 +129,7 @@ harness = false
 # done to cut down on binary size by disabling features that are not required
 # for a particular embedding.
 [features]
+component-model-memory64-only = ["component-model", "wasmtime-environ/component-model-memory64-only", "wasmtime-component-macro/component-model-memory64-only"]
 default = [
   'anyhow',
   'async',

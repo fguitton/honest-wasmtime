@@ -744,8 +744,8 @@ where
             Source::Memory(mut offset) => {
                 for ty in param_tys.types.iter() {
                     let abi = cx.types.canonical_abi(ty);
-                    let size = usize::try_from(abi.size32).unwrap();
-                    let memory = &cx.memory()[abi.next_field32_size(&mut offset)..][..size];
+                    let size = usize::try_from(abi.host_size()).unwrap();
+                    let memory = &cx.memory()[abi.host_next_field_size(&mut offset)..][..size];
                     params.push(Val::load(cx, *ty, memory)?);
                 }
             }
@@ -774,7 +774,7 @@ where
             }
             Destination::Memory(mut ptr) => {
                 for (val, ty) in result_vals.iter().zip(result_tys.types.iter()) {
-                    let offset = cx.types.canonical_abi(ty).next_field32_size(&mut ptr);
+                    let offset = cx.types.canonical_abi(ty).host_next_field_size(&mut ptr);
                     val.store(cx, *ty, offset)?;
                 }
             }
@@ -789,11 +789,11 @@ pub(crate) fn validate_inbounds_dynamic(
     ptr: &ValRaw,
 ) -> Result<usize> {
     // FIXME(#4311): needs memory64 support
-    let ptr = usize::try_from(ptr.get_u32())?;
-    if ptr % usize::try_from(abi.align32)? != 0 {
+    let ptr = super::host_pointer(ptr)?;
+    if ptr % usize::try_from(abi.host_align())? != 0 {
         bail!("pointer not aligned");
     }
-    let end = match ptr.checked_add(usize::try_from(abi.size32).unwrap()) {
+    let end = match ptr.checked_add(usize::try_from(abi.host_size()).unwrap()) {
         Some(n) => n,
         None => bail!("pointer size overflow"),
     };

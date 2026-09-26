@@ -675,6 +675,31 @@ const fn max(a: u32, b: u32) -> u32 {
 }
 
 impl CanonicalAbiInfo {
+    /// Host layout selected by the closed memory64-only component build.
+    pub const fn host_size(&self) -> u32 {
+        if cfg!(feature = "component-model-memory64-only") {
+            self.size64
+        } else {
+            self.size32
+        }
+    }
+    /// Host alignment selected by the closed component build.
+    pub const fn host_align(&self) -> u32 {
+        if cfg!(feature = "component-model-memory64-only") {
+            self.align64
+        } else {
+            self.align32
+        }
+    }
+    /// Advance a native offset using the admitted component pointer width.
+    pub fn host_next_field_size(&self, offset: &mut usize) -> usize {
+        if cfg!(feature = "component-model-memory64-only") {
+            self.next_field64_size(offset)
+        } else {
+            self.next_field32_size(offset)
+        }
+    }
+
     /// ABI information for zero-sized types.
     pub const ZERO: CanonicalAbiInfo = CanonicalAbiInfo {
         size32: 0,
@@ -919,6 +944,15 @@ pub struct VariantInfo {
 }
 
 impl VariantInfo {
+    /// Variant payload position for the admitted component pointer width.
+    pub const fn host_payload_offset(&self) -> u32 {
+        if cfg!(feature = "component-model-memory64-only") {
+            self.payload_offset64
+        } else {
+            self.payload_offset32
+        }
+    }
+
     /// Returns the abi information for a variant represented by the specified
     /// cases.
     pub fn new<'a, I>(cases: I) -> (VariantInfo, CanonicalAbiInfo)
@@ -1298,4 +1332,15 @@ pub enum FlatType {
     I64,
     F32,
     F64,
+}
+
+impl TypeMap {
+    /// Map value position for the admitted component pointer width.
+    pub const fn host_value_offset(&self) -> u32 {
+        if cfg!(feature = "component-model-memory64-only") {
+            self.value_offset64
+        } else {
+            self.value_offset32
+        }
+    }
 }

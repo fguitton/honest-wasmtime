@@ -341,7 +341,7 @@ where
     ) -> Result<Return> {
         assert!(Return::flatten_count() > MAX_FLAT_RESULTS);
         // FIXME(#4311): needs to read an i64 for memory64
-        let ptr = usize::try_from(dst.get_u32())?;
+        let ptr = super::host_pointer(dst)?;
         if ptr % usize::try_from(Return::ALIGN32)? != 0 {
             bail!("return pointer not aligned");
         }
@@ -508,9 +508,9 @@ pub unsafe trait ComponentType: Send + Sync {
     const ABI: CanonicalAbiInfo;
 
     #[doc(hidden)]
-    const SIZE32: usize = Self::ABI.size32 as usize;
+    const SIZE32: usize = Self::ABI.host_size() as usize;
     #[doc(hidden)]
-    const ALIGN32: u32 = Self::ABI.align32;
+    const ALIGN32: u32 = Self::ABI.host_align();
 
     #[doc(hidden)]
     const IS_RUST_UNIT_TYPE: bool = false;
@@ -546,7 +546,7 @@ pub unsafe trait ComponentType: Send + Sync {
 pub unsafe trait ComponentVariant: ComponentType {
     const CASES: &'static [Option<CanonicalAbiInfo>];
     const INFO: VariantInfo = VariantInfo::new_static(Self::CASES);
-    const PAYLOAD_OFFSET32: usize = Self::INFO.payload_offset32 as usize;
+    const PAYLOAD_OFFSET32: usize = Self::INFO.host_payload_offset() as usize;
 }
 
 /// Host types which can be passed to WebAssembly components.
@@ -1270,17 +1270,13 @@ fn lift_pointer_pair_from_flat(
 ) -> Result<(usize, usize)> {
     // FIXME(#4311): needs memory64 treatment
     let _ = cx; // this will be needed for memory64 in the future
-    let ptr = src[0].get_u32();
-    let len = src[1].get_u32();
-    Ok((usize::try_from(ptr)?, usize::try_from(len)?))
+    Ok((super::host_pointer(&src[0])?, super::host_pointer(&src[1])?))
 }
 
 fn lift_pointer_pair_from_memory(cx: &mut LiftContext<'_>, bytes: &[u8]) -> Result<(usize, usize)> {
     // FIXME(#4311): needs memory64 treatment
     let _ = cx; // this will be needed for memory64 in the future
-    let ptr = u32::from_le_bytes(*bytes[..4].as_array().unwrap());
-    let len = u32::from_le_bytes(*bytes[4..].as_array().unwrap());
-    Ok((usize::try_from(ptr)?, usize::try_from(len)?))
+    super::load_host_pointer_pair(bytes)
 }
 
 fn lower_pointer_pair_to_flat<T>(
@@ -1303,13 +1299,22 @@ fn lower_pointer_pair_to_memory<T>(
     len: usize,
 ) {
     // FIXME(#4311): needs memory64 handling
-    *cx.get(offset + 0) = u32::try_from(ptr).unwrap().to_le_bytes();
-    *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+    if cfg!(feature = "component-model-memory64-only") {
+        *cx.get(offset) = (ptr as u64).to_le_bytes();
+        *cx.get(offset + 8) = (len as u64).to_le_bytes();
+    } else {
+        *cx.get(offset) = u32::try_from(ptr).unwrap().to_le_bytes();
+        *cx.get(offset + 4) = u32::try_from(len).unwrap().to_le_bytes();
+    }
 }
 
 // FIXME(#4311): these probably need different constants for memory64
-const UTF16_TAG: usize = 1 << 31;
-const MAX_STRING_BYTE_LENGTH: usize = (1 << 31) - 1;
+const UTF16_TAG: usize = if cfg!(feature = "component-model-memory64-only") {
+    1 << 63
+} else {
+    1 << 31
+};
+const MAX_STRING_BYTE_LENGTH: usize = UTF16_TAG - 1;
 
 // Note that this is similar to `ComponentType for WasmStr` except it can only
 // be used for lowering, not lifting.
@@ -1992,7 +1997,7 @@ where
         offset: usize,
     ) -> Result<()> {
         let map = map_abi(ty, &cx.types);
-        debug_assert!(offset % (CanonicalAbiInfo::POINTER_PAIR.align32 as usize) == 0);
+        debug_assert!(offset % (CanonicalAbiInfo::POINTER_PAIR.host_align() as usize) == 0);
         let (ptr, len) = lower_map_iter(cx, map, self.len(), self.iter())?;
         lower_pointer_pair_to_memory(cx, offset, ptr, len);
         Ok(())
@@ -2032,9 +2037,9 @@ where
     V: Lower + 'a,
 {
     let size = len
-        .checked_mul(usize::try_from(map.entry_abi.size32)?)
+        .checked_mul(usize::try_from(map.entry_abi.host_size())?)
         .ok_or_else(|| format_err!("size overflow copying a map"))?;
-    let ptr = cx.realloc(0, 0, map.entry_abi.align32, size)?;
+    let ptr = cx.realloc(0, 0, map.entry_abi.host_align(), size)?;
 
     let mut entry_offset = ptr;
     for (key, value) in iter {
@@ -2045,9 +2050,9 @@ where
             value,
             cx,
             map.value,
-            entry_offset + usize::try_from(map.value_offset32)?,
+            entry_offset + usize::try_from(map.host_value_offset())?,
         )?;
-        entry_offset += usize::try_from(map.entry_abi.size32)?;
+        entry_offset += usize::try_from(map.entry_abi.host_size())?;
     }
 
     Ok((ptr, len))
@@ -2099,7 +2104,7 @@ where
         offset: usize,
     ) -> Result<()> {
         let map = map_abi(ty, &cx.types);
-        debug_assert!(offset % (CanonicalAbiInfo::POINTER_PAIR.align32 as usize) == 0);
+        debug_assert!(offset % (CanonicalAbiInfo::POINTER_PAIR.host_align() as usize) == 0);
         let (ptr, len) = lower_map_iter(cx, map, self.len(), self.iter())?;
         lower_pointer_pair_to_memory(cx, offset, ptr, len);
         Ok(())
@@ -2146,24 +2151,24 @@ where
     let mut result = TryHashMap::with_capacity(len)?;
 
     match len
-        .checked_mul(usize::try_from(map.entry_abi.size32)?)
+        .checked_mul(usize::try_from(map.entry_abi.host_size())?)
         .and_then(|total| ptr.checked_add(total))
     {
         Some(n) if n <= cx.memory().len() => cx.consume_fuel_array(len, size_of::<(K, V)>())?,
         _ => bail!("map pointer/length out of bounds of memory"),
     }
-    if ptr % (map.entry_abi.align32 as usize) != 0 {
+    if ptr % (map.entry_abi.host_align() as usize) != 0 {
         bail!("map pointer is not aligned");
     }
 
     for i in 0..len {
-        let entry_base = ptr + (i * usize::try_from(map.entry_abi.size32)?);
+        let entry_base = ptr + (i * usize::try_from(map.entry_abi.host_size())?);
 
         let key_bytes = &cx.memory()[entry_base..][..K::SIZE32];
         let key = K::linear_lift_from_memory(cx, map.key, key_bytes)?;
 
         let value_bytes =
-            &cx.memory()[entry_base + usize::try_from(map.value_offset32)?..][..V::SIZE32];
+            &cx.memory()[entry_base + usize::try_from(map.host_value_offset())?..][..V::SIZE32];
         let value = V::linear_lift_from_memory(cx, map.value, value_bytes)?;
 
         result.insert(key, value)?;
@@ -2436,7 +2441,7 @@ where
                 val.linear_lower_to_memory(
                     cx,
                     payload,
-                    offset + (Self::INFO.payload_offset32 as usize),
+                    offset + (Self::INFO.host_payload_offset() as usize),
                 )?;
             }
         }
@@ -2475,7 +2480,7 @@ where
             _ => bad_type_info(),
         };
         let discrim = bytes[0];
-        let payload = &bytes[Self::INFO.payload_offset32 as usize..];
+        let payload = &bytes[Self::INFO.host_payload_offset() as usize..];
         match discrim {
             0 => Ok(None),
             1 => Ok(Some(T::linear_lift_from_memory(cx, payload_ty, payload)?)),
@@ -2689,7 +2694,7 @@ where
             _ => bad_type_info(),
         };
         debug_assert!(offset % (Self::ALIGN32 as usize) == 0);
-        let payload_offset = Self::INFO.payload_offset32 as usize;
+        let payload_offset = Self::INFO.host_payload_offset() as usize;
         match self {
             Ok(e) => {
                 cx.get::<1>(offset)[0] = 0;
@@ -2760,7 +2765,7 @@ where
     ) -> Result<Self> {
         debug_assert!((bytes.as_ptr() as usize) % (Self::ALIGN32 as usize) == 0);
         let discrim = bytes[0];
-        let payload = &bytes[Self::INFO.payload_offset32 as usize..];
+        let payload = &bytes[Self::INFO.host_payload_offset() as usize..];
         let (ok, err) = match ty {
             InterfaceType::Result(ty) => {
                 let ty = &cx.types[ty];
@@ -2921,7 +2926,7 @@ macro_rules! impl_component_ty_for_tuples {
                 let mut _types = types.iter();
                 $(
                     let ty = *_types.next().unwrap_or_else(bad_type_info);
-                    $t.linear_lower_to_memory(cx, ty, $t::ABI.next_field32_size(&mut _offset))?;
+                    $t.linear_lower_to_memory(cx, ty, $t::ABI.host_next_field_size(&mut _offset))?;
                 )*
                 Ok(())
             }
@@ -2958,7 +2963,7 @@ macro_rules! impl_component_ty_for_tuples {
                 let mut _offset = 0;
                 $(
                     let ty = *_types.next().unwrap_or_else(bad_type_info);
-                    let $t = $t::linear_lift_from_memory(cx, ty, &bytes[$t::ABI.next_field32_size(&mut _offset)..][..$t::SIZE32])?;
+                    let $t = $t::linear_lift_from_memory(cx, ty, &bytes[$t::ABI.host_next_field_size(&mut _offset)..][..$t::SIZE32])?;
                 )*
                 Ok(($($t,)*))
             }

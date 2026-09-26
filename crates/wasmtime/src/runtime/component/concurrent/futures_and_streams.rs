@@ -3278,10 +3278,10 @@ impl Instance {
         };
         let write_length_in_bytes = match flat_abi {
             Some(abi) => usize::try_from(abi.size)? * count,
-            None => usize::try_from(write_abi.size32)? * count,
+            None => usize::try_from(write_abi.host_size())? * count,
         };
         if write_length_in_bytes > 0 {
-            if write_address % usize::try_from(write_abi.align32)? != 0 {
+            if write_address % usize::try_from(write_abi.host_align())? != 0 {
                 bail!("write pointer not aligned");
             }
             write_instance
@@ -3298,10 +3298,10 @@ impl Instance {
         };
         let read_length_in_bytes = match flat_abi {
             Some(abi) => usize::try_from(abi.size)? * count,
-            None => usize::try_from(read_abi.size32)? * count,
+            None => usize::try_from(read_abi.host_size())? * count,
         };
         if read_length_in_bytes > 0 {
-            if read_address % usize::try_from(read_abi.align32)? != 0 {
+            if read_address % usize::try_from(read_abi.host_align())? != 0 {
                 bail!("read pointer not aligned");
             }
             read_instance
@@ -3412,7 +3412,7 @@ impl Instance {
 
                     let values = (0..count)
                         .map(|index| {
-                            let size = usize::try_from(write_abi.size32)?;
+                            let size = usize::try_from(write_abi.host_size())?;
                             Val::load(lift, *write_payload_ty, &bytes[(index * size)..][..size])
                         })
                         .collect::<Result<Vec<_>>>()?;
@@ -3429,7 +3429,7 @@ impl Instance {
                     let mut ptr = read_address;
                     for value in values {
                         value.store(lower, *read_payload_ty, ptr)?;
-                        ptr += usize::try_from(read_abi.size32)?;
+                        ptr += usize::try_from(read_abi.host_size())?;
                     }
                     store.set_thread(old_thread)?;
                 }
@@ -3453,10 +3453,10 @@ impl Instance {
             match ty {
                 TransmitIndex::Future(ty) => types[types[ty].ty]
                     .payload
-                    .map(|ty| types.canonical_abi(&ty).size32),
+                    .map(|ty| types.canonical_abi(&ty).host_size()),
                 TransmitIndex::Stream(ty) => types[types[ty].ty]
                     .payload
-                    .map(|ty| types.canonical_abi(&ty).size32),
+                    .map(|ty| types.canonical_abi(&ty).host_size()),
             }
             .unwrap_or(0),
         )?;
@@ -3612,7 +3612,7 @@ impl Instance {
                 let instance = read_instance.id().get(store.0);
                 let types = instance.component().types();
                 let item_size = match read_ty.payload(types) {
-                    Some(ty) => usize::try_from(types.canonical_abi(ty).size32)?,
+                    Some(ty) => usize::try_from(types.canonical_abi(ty).host_size())?,
                     None => 0,
                 };
                 let concurrent_state = store.0.concurrent_state_mut()?;
@@ -3850,7 +3850,7 @@ impl Instance {
                 let instance = write_instance.id().get(store.0);
                 let types = instance.component().types();
                 let item_size = match write_ty.payload(types) {
-                    Some(ty) => usize::try_from(types.canonical_abi(ty).size32)?,
+                    Some(ty) => usize::try_from(types.canonical_abi(ty).host_size())?,
                     None => 0,
                 };
                 let concurrent_state = store.0.concurrent_state_mut()?;

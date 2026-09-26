@@ -592,12 +592,12 @@ impl Func {
         args: &[Val],
         dst: &mut [MaybeUninit<ValRaw>],
     ) -> Result<()> {
-        let size = usize::try_from(params_ty.abi.size32).unwrap();
-        let ptr = cx.realloc(0, 0, params_ty.abi.align32, size)?;
+        let size = usize::try_from(params_ty.abi.host_size()).unwrap();
+        let ptr = cx.realloc(0, 0, params_ty.abi.host_align(), size)?;
         let mut offset = ptr;
         for (ty, arg) in params_ty.types.iter().zip(args) {
             let abi = cx.types.canonical_abi(ty);
-            arg.store(cx, *ty, abi.next_field32_size(&mut offset))?;
+            arg.store(cx, *ty, abi.host_next_field_size(&mut offset))?;
         }
 
         dst[0].write(ValRaw::i64(ptr as i64));
@@ -635,22 +635,22 @@ impl Func {
         src: &mut core::slice::Iter<'_, ValRaw>,
     ) -> Result<impl Iterator<Item = Result<Val>> + use<'a, 'b>> {
         // FIXME(#4311): needs to read an i64 for memory64
-        let ptr = usize::try_from(src.next().unwrap().get_u32())?;
-        if ptr % usize::try_from(results_ty.abi.align32)? != 0 {
+        let ptr = host_pointer(src.next().unwrap())?;
+        if ptr % usize::try_from(results_ty.abi.host_align())? != 0 {
             bail!("return pointer not aligned");
         }
 
         let bytes = cx
             .memory()
             .get(ptr..)
-            .and_then(|b| b.get(..usize::try_from(results_ty.abi.size32).unwrap()))
+            .and_then(|b| b.get(..usize::try_from(results_ty.abi.host_size()).unwrap()))
             .ok_or_else(|| crate::format_err!("pointer out of bounds of memory"))?;
 
         let mut offset = 0;
         Ok(results_ty.types.iter().map(move |ty| {
             let abi = cx.types.canonical_abi(ty);
-            let offset = abi.next_field32_size(&mut offset);
-            Val::load(cx, *ty, &bytes[offset..][..abi.size32 as usize])
+            let offset = abi.host_next_field_size(&mut offset);
+            Val::load(cx, *ty, &bytes[offset..][..abi.host_size() as usize])
         }))
     }
 
@@ -730,4 +730,27 @@ pub(crate) unsafe fn call_post_return(
     }
 
     Ok(())
+}
+
+// These helpers are used only by the closed linear-memory component ABI.
+fn host_pointer(raw: &crate::ValRaw) -> Result<usize> {
+    if cfg!(feature = "component-model-memory64-only") {
+        Ok(usize::try_from(raw.get_u64())?)
+    } else {
+        Ok(usize::try_from(raw.get_u32())?)
+    }
+}
+
+pub(super) fn load_host_pointer_pair(bytes: &[u8]) -> Result<(usize, usize)> {
+    if cfg!(feature = "component-model-memory64-only") {
+        Ok((
+            usize::try_from(u64::from_le_bytes(bytes[..8].try_into().unwrap()))?,
+            usize::try_from(u64::from_le_bytes(bytes[8..16].try_into().unwrap()))?,
+        ))
+    } else {
+        Ok((
+            usize::try_from(u32::from_le_bytes(bytes[..4].try_into().unwrap()))?,
+            usize::try_from(u32::from_le_bytes(bytes[4..8].try_into().unwrap()))?,
+        ))
+    }
 }

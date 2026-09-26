@@ -304,6 +304,7 @@ where
 }
 
 enum ResourceLimiterInner<T> {
+    Owned(Box<dyn crate::ResourceLimiter + Send + Sync>),
     Sync(Box<dyn (FnMut(&mut T) -> &mut dyn crate::ResourceLimiter) + Send + Sync>),
     #[cfg(feature = "async")]
     Async(Box<dyn (FnMut(&mut T) -> &mut dyn crate::ResourceLimiterAsync) + Send + Sync>),
@@ -927,6 +928,15 @@ impl<T> Store<T> {
     /// ```
     ///
     /// [`ResourceLimiter`]: crate::ResourceLimiter
+    /// Install a synchronous limiter owned by the store, independent of host data.
+    pub fn limiter_owned(&mut self, limiter: impl crate::ResourceLimiter + Send + Sync + 'static) {
+        self.inner.inner.instance_limit = limiter.instances();
+        self.inner.inner.table_limit = limiter.tables();
+        self.inner.inner.memory_limit = limiter.memories();
+        self.inner.limiter = Some(ResourceLimiterInner::Owned(Box::new(limiter)));
+    }
+
+    /// Install an accessor for a limiter held in host data.
     pub fn limiter(
         &mut self,
         mut limiter: impl (FnMut(&mut T) -> &mut dyn crate::ResourceLimiter) + Send + Sync + 'static,
@@ -2321,6 +2331,7 @@ unsafe impl<T> VMStore for StoreInner<T> {
         let (data, limiter, opaque) = self.data_limiter_and_opaque();
 
         let limiter = limiter.map(|l| match l {
+            ResourceLimiterInner::Owned(s) => StoreResourceLimiter::Sync(s.as_mut()),
             ResourceLimiterInner::Sync(s) => StoreResourceLimiter::Sync(s(data)),
             #[cfg(feature = "async")]
             ResourceLimiterInner::Async(s) => StoreResourceLimiter::Async(s(data)),

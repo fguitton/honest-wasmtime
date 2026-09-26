@@ -460,8 +460,18 @@ impl Component {
 
         let realloc_func_type = Arc::new(FuncType::new(
             engine,
-            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
+            (0..4).map(|_| {
+                if cfg!(feature = "component-model-memory64-only") {
+                    ValType::I64
+                } else {
+                    ValType::I32
+                }
+            }),
+            [if cfg!(feature = "component-model-memory64-only") {
+                ValType::I64
+            } else {
+                ValType::I32
+            }],
         ));
 
         Ok(Component {

@@ -2397,7 +2397,12 @@ impl Config {
             | WasmFeatures::CM_GC
             | WasmFeatures::CM_MAP
             | WasmFeatures::CM_FIXED_LENGTH_LISTS
-            | WasmFeatures::CM_IMPLEMENTS;
+            | WasmFeatures::CM_IMPLEMENTS
+            | if cfg!(feature = "component-model-memory64-only") {
+                WasmFeatures::CM64
+            } else {
+                WasmFeatures::empty()
+            };
 
         #[allow(unused_mut, reason = "easier to avoid #[cfg]")]
         let mut unsupported = !features_known_to_wasmtime;

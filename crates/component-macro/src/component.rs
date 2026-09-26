@@ -471,7 +471,7 @@ impl Expander for LiftExpander {
                 quote!(#ident: <#ty as #wt::component::Lift>::linear_lift_from_memory(
                 cx, #field_ty,
                 &bytes
-                    [<#ty as #wt::component::ComponentType>::ABI.next_field32_size(&mut offset)..]
+                    [<#ty as #wt::component::ComponentType>::ABI.host_next_field_size(&mut offset)..]
                     [..<#ty as #wt::component::ComponentType>::SIZE32]
             )?,),
             );
@@ -711,7 +711,7 @@ impl Expander for LowerExpander {
                 &self.#ident,
                 cx,
                 #field_ty,
-                <#ty as #wt::component::ComponentType>::ABI.next_field32_size(&mut offset),
+                <#ty as #wt::component::ComponentType>::ABI.host_next_field_size(&mut offset),
             )?;));
         }
 
