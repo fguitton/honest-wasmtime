@@ -798,12 +798,15 @@ impl CanonicalAbiInfo {
         *offset - self.size64
     }
 
-    /// Same as `next_field64`, but bumps a usize pointer
+    /// Same as `next_field64`, but bumps a usize pointer. The pointer may be an
+    /// absolute address in a 64-bit memory, above 4 GiB, so the arithmetic
+    /// stays in `usize`; callers have already bounds-checked the whole value.
     pub fn next_field64_size(&self, offset: &mut usize) -> usize {
-        let cur = u32::try_from(*offset).unwrap();
-        let cur = align_to(cur, self.align64) + self.size64;
-        *offset = usize::try_from(cur).unwrap();
-        usize::try_from(cur - self.size64).unwrap()
+        let align = usize::try_from(self.align64).unwrap();
+        let size = usize::try_from(self.size64).unwrap();
+        let start = offset.next_multiple_of(align);
+        *offset = start + size;
+        start
     }
 
     /// Returns ABI information for a structure which contains `count` flags.

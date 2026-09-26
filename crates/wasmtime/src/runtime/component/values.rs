@@ -259,8 +259,7 @@ impl Val {
                     fields
                         .map(|field| -> Result<(String, Val)> {
                             let abi = cx.types.canonical_abi(&field.ty);
-                            let offset = abi.next_field32(&mut offset);
-                            let offset = usize::try_from(offset).unwrap();
+                            let offset = abi.host_next_field_size(&mut offset);
                             let size = usize::try_from(abi.host_size()).unwrap();
                             Ok((
                                 field.name.to_string(),
@@ -277,8 +276,7 @@ impl Val {
                     types
                         .map(|ty| {
                             let abi = cx.types.canonical_abi(&ty);
-                            let offset = abi.next_field32(&mut offset);
-                            let offset = usize::try_from(offset).unwrap();
+                            let offset = abi.host_next_field_size(&mut offset);
                             let size = usize::try_from(abi.host_size()).unwrap();
                             Val::load(cx, ty, &bytes[offset..][..size])
                         })
