@@ -5,14 +5,16 @@
 ))]
 
 use wasmtime::component::{Component, Linker, Val};
-use wasmtime::{Engine, Result, Store};
+use wasmtime::{Config, Engine, Result, Store, WasmFeatures};
 
 // Upstream's seven dynamic-Val amplification cases, with 64-bit canonical ABI
 // list headers. Records and variants must charge host allocation, not only the
 // compact guest field widths. No WASI or asynchronous component feature is used.
 #[test]
 fn hostcall_fuel_accounts_for_memory64_val_allocations() -> Result<()> {
-    let engine = Engine::default();
+    let mut config = Config::new();
+    config.wasm_features(WasmFeatures::CM64, true);
+    let engine = Engine::new(&config)?;
     let component = Component::new(&engine, include_str!("memory64_hostcall_fuel.wat"))?;
     for name in ["f1", "f2", "f3", "f4", "f5", "f6", "f7"] {
         for limited in [false, true] {
