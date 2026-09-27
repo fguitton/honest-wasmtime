@@ -92,32 +92,32 @@
   ))
   (export $t1 "t1" (type $t1'))
   (func (export "f1") (result (list $t1))
-    (canon lift (core func $i "f1") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f1") (memory $i "m")))
 
   (type $t2 (tuple bool bool bool bool bool bool bool bool bool bool))
   (func (export "f2") (result (list $t2))
-    (canon lift (core func $i "f2") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f2") (memory $i "m")))
 
   (type $t3 (option (option (option u8))))
   (func (export "f3") (result (list $t3))
-    (canon lift (core func $i "f3") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f3") (memory $i "m")))
 
   (type $t4' (variant (case "really-long-name-that-just-keeps-on-going-oh-boy-here-we-go-some-more")))
   (export $t4 "t4" (type $t4'))
   (func (export "f4") (result (list $t4))
-    (canon lift (core func $i "f4") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f4") (memory $i "m")))
 
   (type $t5' (enum "really-long-name-that-just-keeps-on-going-oh-boy-here-we-go-some-more"))
   (export $t5 "t5" (type $t5'))
   (func (export "f5") (result (list $t5))
-    (canon lift (core func $i "f5") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f5") (memory $i "m")))
 
   (type $t6' (record
     (field "really-long-name-that-just-keeps-on-going-oh-boy-here-we-go-some-more" bool)
   ))
   (export $t6 "t6" (type $t6'))
   (func (export "f6") (result (list $t6))
-    (canon lift (core func $i "f6") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f6") (memory $i "m")))
 
   (type $t7' (flags
     "this-is-a-really-long-flag1"
@@ -131,5 +131,5 @@
   ))
   (export $t7 "t7" (type $t7'))
   (func (export "f7") (result (list $t7))
-    (canon lift (core func $i "f7") (memory (core memory $i "m"))))
+    (canon lift (core func $i "f7") (memory $i "m")))
 )
