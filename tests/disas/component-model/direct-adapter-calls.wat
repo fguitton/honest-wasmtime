@@ -58,8 +58,8 @@
 )
 
 ;; function u0:0(i64 vmctx, i64, i32) -> i32 tail {
-;;     region0 = 8 "VMContext+0x8"
-;;     region1 = 67108888 "VMStoreContext+0x18"
+;;     region0 = 112 ""
+;;     region1 = 90 ""
 ;;     gv0 = vmctx
 ;;     gv1 = load.i64 notrap aligned readonly can_move region0 gv0+8
 ;;     gv2 = load.i64 notrap aligned region1 gv1+24
@@ -75,9 +75,9 @@
 ;; }
 ;;
 ;; function u1:0(i64 vmctx, i64) -> i32 tail {
-;;     region0 = 8 "VMContext+0x8"
-;;     region1 = 67108888 "VMStoreContext+0x18"
-;;     region2 = 1207959576 "VMFunctionImport+0x18"
+;;     region0 = 112 ""
+;;     region1 = 90 ""
+;;     region2 = 30 ""
 ;;     gv0 = vmctx
 ;;     gv1 = load.i64 notrap aligned readonly can_move region0 gv0+8
 ;;     gv2 = load.i64 notrap aligned region1 gv1+24
@@ -96,12 +96,12 @@
 ;; }
 ;;
 ;; function u2:0(i64 vmctx, i64, i32) -> i32 tail {
-;;     region0 = 8 "VMContext+0x8"
-;;     region1 = 67108888 "VMStoreContext+0x18"
-;;     region2 = 1476395008 "VMGlobalImport+0x0"
-;;     region3 = 402653184 "PublicGlobal"
-;;     region4 = 1207959576 "VMFunctionImport+0x18"
-;;     region5 = 1207959560 "VMFunctionImport+0x8"
+;;     region0 = 112 ""
+;;     region1 = 90 ""
+;;     region2 = 183 ""
+;;     region3 = 39 ""
+;;     region4 = 30 ""
+;;     region5 = 0 ""
 ;;     gv0 = vmctx
 ;;     gv1 = load.i64 notrap aligned readonly can_move region0 gv0+8
 ;;     gv2 = load.i64 notrap aligned region1 gv1+24
