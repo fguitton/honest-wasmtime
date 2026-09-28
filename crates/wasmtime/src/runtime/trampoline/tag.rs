@@ -33,14 +33,15 @@ pub fn create_tag(store: &mut StoreOpaque, ty: &TagType) -> Result<InstanceId> {
 
     let imports = Imports::default();
 
-    // The tag's signature type is referred to by engine-level type index from
-    // the dummy module's `Tag`, so its `RegisteredType` must be handed to the
-    // instance's runtime info to keep that index rooted in the engine's type
-    // registry for as long as the instance (and thus the store) is alive.
-    let runtime_info = ModuleRuntimeInfo::bare_with_registered_type(
+    // Both the tag's signature type and its exception type are referred to by
+    // engine-level type index from the dummy module's `Tag`, so both
+    // `RegisteredType`s must be handed to the instance's runtime info to keep
+    // those indices rooted in the engine's type registry for as long as the
+    // instance (and thus the store) is alive.
+    let runtime_info = ModuleRuntimeInfo::bare_with_registered_types(
         try_new::<Arc<_>>(module)?,
         store.engine(),
-        Some(func_ty),
+        [func_ty, exn_ty],
     )?;
 
     unsafe {

@@ -30,7 +30,7 @@ pub async fn create_table(
 
     let imports = Imports::default();
 
-    let runtime_info = ModuleRuntimeInfo::bare_with_registered_type(
+    let runtime_info = ModuleRuntimeInfo::bare_with_registered_types(
         try_new::<Arc<_>>(module)?,
         store.engine(),
         table.element().clone().into_registered_type(),

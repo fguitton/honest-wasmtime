@@ -291,47 +291,49 @@ pub enum ModuleRuntimeInfo {
 /// cases where a purpose-built environ::Module is used and a full
 /// CompiledModule does not exist (for example, for tests or for the
 /// default-callee instance).
-#[derive(Clone)]
 pub struct BareModuleInfo {
     module: Arc<wasmtime_environ::Module>,
     offsets: VMOffsets<HostPtr>,
-    _registered_type: Option<RegisteredType>,
+    _registered_types: TryVec<RegisteredType>,
 }
 
 impl ModuleRuntimeInfo {
     pub(crate) fn bare(module: Arc<wasmtime_environ::Module>) -> Result<Self, OutOfMemory> {
-        ModuleRuntimeInfo::new_bare(module, None)
+        ModuleRuntimeInfo::new_bare(module, TryVec::new())
     }
 
-    /// Same as [`ModuleRuntimeInfo::bare`], but additionally keeps
-    /// `registered_type` alive for as long as the resulting instance.
+    /// Same as [`ModuleRuntimeInfo::bare`], but additionally keeps every one
+    /// of `registered_types` alive for as long as the resulting instance.
     ///
-    /// This is the choke point at which a host-allocated table or tag holds a
-    /// `VMSharedTypeIndex` alive on behalf of a store, so it is where we check
-    /// that the type belongs to that store's engine. Returns an error if
-    /// `registered_type` was not registered with `engine`.
-    pub(crate) fn bare_with_registered_type(
+    /// This is the choke point at which a host-allocated table or tag holds
+    /// `VMSharedTypeIndex`es alive on behalf of a store, so it is where we
+    /// check that each type belongs to that store's engine. Returns an error
+    /// if any of `registered_types` was not registered with `engine`.
+    pub(crate) fn bare_with_registered_types(
         module: Arc<wasmtime_environ::Module>,
         engine: &crate::Engine,
-        registered_type: Option<RegisteredType>,
+        registered_types: impl IntoIterator<Item = RegisteredType>,
     ) -> Result<Self> {
-        if let Some(ty) = registered_type.as_ref() {
+        let registered_types: TryVec<RegisteredType> = registered_types
+            .into_iter()
+            .try_collect::<_, OutOfMemory>()?;
+        for ty in registered_types.iter() {
             crate::ensure!(
                 crate::Engine::same(engine, ty.engine()),
                 "type used with wrong engine"
             );
         }
-        Ok(ModuleRuntimeInfo::new_bare(module, registered_type)?)
+        Ok(ModuleRuntimeInfo::new_bare(module, registered_types)?)
     }
 
     fn new_bare(
         module: Arc<wasmtime_environ::Module>,
-        registered_type: Option<RegisteredType>,
+        registered_types: TryVec<RegisteredType>,
     ) -> Result<Self, OutOfMemory> {
         let info = try_new(BareModuleInfo {
             offsets: VMOffsets::new(HostPtr, &module),
             module,
-            _registered_type: registered_type,
+            _registered_types: registered_types,
         })?;
         Ok(ModuleRuntimeInfo::Bare(info))
     }
